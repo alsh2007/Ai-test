@@ -6,10 +6,26 @@ from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import openai
-from keep_alive import keep_alive  # استدعاء keep_alive
+from flask import Flask
+from threading import Thread
 
-keep_alive()  # هذا يخلي البوت يظل شغال 24/7
+# ====== Keep Alive ======
+app = Flask('')
 
+@app.route('/')
+def home():
+    return "Bot is alive!"
+
+def run():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+keep_alive()  # شغّل السيرفر ويب
+
+# ====== البوت ======
 openai.api_key = os.getenv("OPENAI_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
@@ -18,10 +34,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-user_chats = {}  # user_id : {"messages": [...], "last_interaction": timestamp}
-CHAT_EXPIRE_SECONDS = 3600  # 60 دقيقة
-REMINDER_SECONDS = 86400   # 24 ساعة
-
+user_chats = {}
+CHAT_EXPIRE_SECONDS = 3600
+REMINDER_SECONDS = 86400
 forbidden_keywords = ["اختراق", "ديب ويب", "hacking", "porn", "اباحي", "crack"]
 
 def is_safe_message(text: str) -> bool:
@@ -42,7 +57,7 @@ async def send_reminders(app):
                     data["reminder_sent"] = True
                 except Exception as e:
                     logger.error(f"Reminder failed for {user_id}: {e}")
-        await asyncio.sleep(600)  # كل 10 دقائق يتحقق
+        await asyncio.sleep(600)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("هلا! أنا بوت ذكاء اصطناعي مفيد. اسألني أي شي!")
@@ -99,13 +114,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("صار خطأ أثناء معالجة سؤالك 😔")
 
 async def main():
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("about", about_command))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-    app.job_queue.run_repeating(lambda _: asyncio.create_task(send_reminders(app)), interval=600, first=10)
-    await app.run_polling()
+    app_telegram = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    app_telegram.add_handler(CommandHandler("start", start))
+    app_telegram.add_handler(CommandHandler("help", help_command))
+    app_telegram.add_handler(CommandHandler("about", about_command))
+    app_telegram.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+    app_telegram.job_queue.run_repeating(lambda _: asyncio.create_task(send_reminders(app_telegram)), interval=600, first=10)
+    await app_telegram.run_polling()
 
 if __name__ == "__main__":
     asyncio.run(main())
