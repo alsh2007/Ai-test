@@ -6,6 +6,9 @@ from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import openai
+from keep_alive import keep_alive  # استدعاء keep_alive
+
+keep_alive()  # هذا يخلي البوت يظل شغال 24/7
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -64,14 +67,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if chat_type != "private":
-        # في المجموعات يتفاعل فقط إذا تم منشن للبوت أو رد على رسالته
         if f"@{context.bot.username}" not in user_text and not update.message.reply_to_message:
             return
 
-    # إرسال حالة الكتابة
     await update.message.chat.send_action(action=ChatAction.TYPING)
 
-    # تهيئة سجل المستخدم
     if user_id not in user_chats:
         user_chats[user_id] = {
             "messages": [{"role": "system", "content": "أنت مساعد عربي مفيد، عفوي، يجاوب على كل الأسئلة، يرد باللهجات المختلفة، عند طلب نكتة يعطي نكتة جديدة كل مرة، لا تعطي محتوى غير قانوني أو إباحي."}],
@@ -82,7 +82,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_chats[user_id]["last_interaction"] = time.time()
     user_chats[user_id]["chat_type"] = chat_type
     user_chats[user_id]["reminder_sent"] = False
-
     user_chats[user_id]["messages"].append({"role": "user", "content": user_text})
 
     try:
@@ -93,9 +92,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             temperature=0.9
         )
         answer = response.choices[0].message['content']
-
         user_chats[user_id]["messages"].append({"role": "assistant", "content": answer})
-
         await update.message.reply_text(answer)
     except Exception as e:
         logger.error(f"Error: {e}")
@@ -103,15 +100,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("about", about_command))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-
-    # تشغيل مهمة التذكير بشكل متزامن
     app.job_queue.run_repeating(lambda _: asyncio.create_task(send_reminders(app)), interval=600, first=10)
-
     await app.run_polling()
 
 if __name__ == "__main__":
