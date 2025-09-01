@@ -6,7 +6,12 @@ from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 import openai
+from keep_alive import keep_alive
 
+# تفعيل Keep-Alive
+keep_alive()
+
+# مفاتيح API
 openai.api_key = os.getenv("OPENAI_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
@@ -15,7 +20,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-user_chats = {}  # user_id : {"messages": [...], "last_interaction": timestamp}
+user_chats = {}
 CHAT_EXPIRE_SECONDS = 3600  # 60 دقيقة
 REMINDER_SECONDS = 86400   # 24 ساعة
 
@@ -39,7 +44,7 @@ async def send_reminders(app):
                     data["reminder_sent"] = True
                 except Exception as e:
                     logger.error(f"Reminder failed for {user_id}: {e}")
-        await asyncio.sleep(600)  # كل 10 دقائق يتحقق
+        await asyncio.sleep(600)
 
 async def start(update, context):
     await update.message.reply_text("هلا! أنا بوت ذكاء اصطناعي مفيد. اسألني أي شي!")
@@ -64,14 +69,11 @@ async def handle_message(update, context):
         return
 
     if chat_type != "private":
-        # في المجموعات يتفاعل فقط إذا تم منشن للبوت أو رد على رسالته
         if f"@{context.bot.username}" not in user_text and not update.message.reply_to_message:
             return
 
-    # إرسال حالة الكتابة
     await update.message.chat.send_action(action=ChatAction.TYPING)
 
-    # تهيئة سجل المستخدم
     if user_id not in user_chats:
         user_chats[user_id] = {
             "messages": [{"role": "system", "content": "أنت مساعد عربي مفيد، عفوي، يجاوب على كل الأسئلة، يرد باللهجات المختلفة، عند طلب نكتة يعطي نكتة جديدة كل مرة، لا تعطي محتوى غير قانوني أو إباحي."}],
@@ -104,6 +106,17 @@ async def handle_message(update, context):
 async def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("about", about_command))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+
+    app.job_queue.run_repeating(lambda _: asyncio.create_task(send_reminders(app)), interval=600, first=10)
+
+    await app.run_polling()
+
+if __name__ == "__main__":
+    asyncio.run(main())
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("about", about_command))
