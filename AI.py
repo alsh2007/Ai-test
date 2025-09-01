@@ -1,7 +1,7 @@
 import logging
+import os
 import time
 import asyncio
-import os
 from threading import Thread
 from flask import Flask
 from telegram import Update
@@ -9,32 +9,27 @@ from telegram.constants import ChatAction
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 import openai
 
-# إعداد API Keys
+# إعدادات مفاتيح API
 openai.api_key = os.getenv("OPENAI_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-# إعداد Flask
-app_flask = Flask(__name__)
-
-@app_flask.route("/")
-def home():
-    return "بوت مشتغل 🔥"
-
-# إعداد logging
+# إعدادات اللوج
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# إعدادات البوت
+# سجل المحادثات
 user_chats = {}  # user_id : {"messages": [...], "last_interaction": timestamp}
 CHAT_EXPIRE_SECONDS = 3600  # 60 دقيقة
 REMINDER_SECONDS = 86400   # 24 ساعة
 forbidden_keywords = ["اختراق", "ديب ويب", "hacking", "porn", "اباحي", "crack"]
 
+# تحقق من الرسائل
 def is_safe_message(text: str) -> bool:
     return not any(word.lower() in text.lower() for word in forbidden_keywords)
 
+# مهمة التذكير
 async def send_reminders(app):
     while True:
         current_time = time.time()
@@ -43,25 +38,27 @@ async def send_reminders(app):
             if "reminder_sent" not in data and current_time - last > REMINDER_SECONDS:
                 try:
                     chat_type = data.get("chat_type", "private")
-                    msg = "ها يمعود شنو نسيتني؟🦭" if chat_type == "private" else "ها يولد شنو نسيتوني؟🦭"
-                    await app.bot.send_message(chat_id=user_id, text=msg)
+                    if chat_type == "private":
+                        await app.bot.send_message(chat_id=user_id, text="ها يمعود شنو نسيتني؟🦭")
+                    else:
+                        await app.bot.send_message(chat_id=user_id, text="ها يولد شنو نسيتوني؟🦭")
                     data["reminder_sent"] = True
                 except Exception as e:
                     logger.error(f"Reminder failed for {user_id}: {e}")
         await asyncio.sleep(600)  # كل 10 دقائق يتحقق
 
 # أوامر البوت
-async def start(update, context):
+async def start(update: Update, context):
     await update.message.reply_text("هلا! أنا بوت ذكاء اصطناعي مفيد. اسألني أي شي!")
 
-async def help_command(update, context):
+async def help_command(update: Update, context):
     await update.message.reply_text("أوامر البوت:\n/start - البداية\n/help - المساعدة\n/about - معلومات عن البوت")
 
-async def about_command(update, context):
+async def about_command(update: Update, context):
     await update.message.reply_text("أنا بوت عربي، أجاوب على الأسئلة، أعطي نكت، وما أعطي محتوى غير قانوني.")
 
-# التعامل مع الرسائل
-async def handle_message(update, context):
+# التعامل ويا الرسائل
+async def handle_message(update: Update, context):
     user_id = update.effective_chat.id
     user_text = update.message.text
     chat_type = update.effective_chat.type
@@ -106,20 +103,28 @@ async def handle_message(update, context):
         logger.error(f"Error: {e}")
         await update.message.reply_text("صار خطأ أثناء معالجة سؤالك 😔")
 
-# تشغيل البوت
-async def run_bot():
+# إعداد التطبيق
+def run_bot():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("about", about_command))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+    # مهمة التذكير
     app.job_queue.run_repeating(lambda _: asyncio.create_task(send_reminders(app)), interval=600, first=10)
-    await app.run_polling()
+    app.run_polling()
 
-# تشغيل Flask و البوت بنفس الوقت
+# Flask keep-alive
+flask_app = Flask("")
+
+@flask_app.route("/")
+def home():
+    return "بوت شغال ٢٤/٧ 🌟"
+
 def run_flask():
-    app_flask.run(host="0.0.0.0", port=8080)
+    flask_app.run(host="0.0.0.0", port=8080)
 
+# تشغيل البوت وFlask بالثريد
 if __name__ == "__main__":
     Thread(target=run_flask).start()
-    asyncio.run(run_bot())
+    run_bot()
