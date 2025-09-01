@@ -6,21 +6,21 @@ from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 import openai
-from keep_alive import keep_alive
+from flask import Flask
+from threading import Thread
 
-# تفعيل Keep-Alive
-keep_alive()
-
-# مفاتيح API
+# ---- API KEYS ----
 openai.api_key = os.getenv("OPENAI_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
+# ---- Logging ----
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-user_chats = {}
+# ---- User Chat Storage ----
+user_chats = {}  # user_id : {"messages": [...], "last_interaction": timestamp}
 CHAT_EXPIRE_SECONDS = 3600  # 60 دقيقة
 REMINDER_SECONDS = 86400   # 24 ساعة
 
@@ -29,6 +29,7 @@ forbidden_keywords = ["اختراق", "ديب ويب", "hacking", "porn", "اب�
 def is_safe_message(text: str) -> bool:
     return not any(word.lower() in text.lower() for word in forbidden_keywords)
 
+# ---- Reminders ----
 async def send_reminders(app):
     while True:
         current_time = time.time()
@@ -44,8 +45,9 @@ async def send_reminders(app):
                     data["reminder_sent"] = True
                 except Exception as e:
                     logger.error(f"Reminder failed for {user_id}: {e}")
-        await asyncio.sleep(600)
+        await asyncio.sleep(600)  # كل 10 دقائق يتحقق
 
+# ---- Handlers ----
 async def start(update, context):
     await update.message.reply_text("هلا! أنا بوت ذكاء اصطناعي مفيد. اسألني أي شي!")
 
@@ -84,7 +86,6 @@ async def handle_message(update, context):
     user_chats[user_id]["last_interaction"] = time.time()
     user_chats[user_id]["chat_type"] = chat_type
     user_chats[user_id]["reminder_sent"] = False
-
     user_chats[user_id]["messages"].append({"role": "user", "content": user_text})
 
     try:
@@ -95,37 +96,33 @@ async def handle_message(update, context):
             temperature=0.9
         )
         answer = response.choices[0].message['content']
-
         user_chats[user_id]["messages"].append({"role": "assistant", "content": answer})
-
         await update.message.reply_text(answer)
     except Exception as e:
         logger.error(f"Error: {e}")
         await update.message.reply_text("صار خطأ أثناء معالجة سؤالك 😔")
 
+# ---- Main Bot ----
 async def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("about", about_command))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-
     app.job_queue.run_repeating(lambda _: asyncio.create_task(send_reminders(app)), interval=600, first=10)
-
     await app.run_polling()
 
+# ---- Flask Keep-Alive ----
+flask_app = Flask("")
+
+@flask_app.route("/")
+def home():
+    return "Bot is alive!"
+
+def run_flask():
+    flask_app.run(host="0.0.0.0", port=8080)
+
+# ---- Run Everything ----
 if __name__ == "__main__":
-    asyncio.run(main())
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("about", about_command))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-
-    # تشغيل مهمة التذكير بشكل متزامن
-    app.job_queue.run_repeating(lambda _: asyncio.create_task(send_reminders(app)), interval=600, first=10)
-
-    await app.run_polling()
-
-if __name__ == "__main__":
+    Thread(target=run_flask).start()  # Keep-alive thread
     asyncio.run(main())
