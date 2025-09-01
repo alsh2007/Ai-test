@@ -1,96 +1,118 @@
-import logging import time import asyncio import os from telegram import Update from telegram.constants import ChatAction from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes import openai
+import logging
+import time
+import asyncio
+import os
+from telegram import Update
+from telegram.constants import ChatAction
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
+import openai
 
-إعداد المتغيرات من البيئة
+openai.api_key = os.getenv("OPENAI_API_KEY")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-openai.api_key = os.getenv("OPENAI_API_KEY") TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN") REPLIT_URL = os.getenv("REPLIT_URL")
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-logging.basicConfig( format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO ) logger = logging.getLogger(name)
-
-user_chats = {}  # user_id : {"messages": [...], "last_interaction": timestamp} CHAT_EXPIRE_SECONDS = 3600  # 60 دقيقة REMINDER_SECONDS = 86400   # 24 ساعة
+user_chats = {}  # user_id : {"messages": [...], "last_interaction": timestamp}
+CHAT_EXPIRE_SECONDS = 3600  # 60 دقيقة
+REMINDER_SECONDS = 86400   # 24 ساعة
 
 forbidden_keywords = ["اختراق", "ديب ويب", "hacking", "porn", "اباحي", "crack"]
 
-def is_safe_message(text: str) -> bool: return not any(word.lower() in text.lower() for word in forbidden_keywords)
+def is_safe_message(text: str) -> bool:
+    return not any(word.lower() in text.lower() for word in forbidden_keywords)
 
-async def send_reminders(app): while True: current_time = time.time() for user_id, data in user_chats.items(): last = data["last_interaction"] if "reminder_sent" not in data and current_time - last > REMINDER_SECONDS: try: chat_type = data.get("chat_type", "private") if chat_type == "private": await app.bot.send_message(chat_id=user_id, text="ها يمعود شنو نسيتني؟🦭") else: await app.bot.send_message(chat_id=user_id, text="ها يولد شنو نسيتوني؟🦭") data["reminder_sent"] = True except Exception as e: logger.error(f"Reminder failed for {user_id}: {e}") await asyncio.sleep(600)  # كل 10 دقائق يتحقق
+async def send_reminders(app):
+    while True:
+        current_time = time.time()
+        for user_id, data in user_chats.items():
+            last = data["last_interaction"]
+            if "reminder_sent" not in data and current_time - last > REMINDER_SECONDS:
+                try:
+                    chat_type = data.get("chat_type", "private")
+                    if chat_type == "private":
+                        await app.bot.send_message(chat_id=user_id, text="ها يمعود شنو نسيتني؟🦭")
+                    else:
+                        await app.bot.send_message(chat_id=user_id, text="ها يولد شنو نسيتوني؟🦭")
+                    data["reminder_sent"] = True
+                except Exception as e:
+                    logger.error(f"Reminder failed for {user_id}: {e}")
+        await asyncio.sleep(600)  # كل 10 دقائق يتحقق
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE): await update.message.reply_text("هلا! أنا بوت ذكاء اصطناعي مفيد. اسألني أي شي!")
+async def start(update, context):
+    await update.message.reply_text("هلا! أنا بوت ذكاء اصطناعي مفيد. اسألني أي شي!")
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE): await update.message.reply_text("أوامر البوت:\n/start - البداية\n/help - المساعدة\n/about - معلومات عن البوت")
+async def help_command(update, context):
+    await update.message.reply_text("أوامر البوت:\n/start - البداية\n/help - المساعدة\n/about - معلومات عن البوت")
 
-async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE): await update.message.reply_text("أنا بوت عربي، أجاوب على الأسئلة، أعطي نكت، وما أعطي محتوى غير قانوني.")
+async def about_command(update, context):
+    await update.message.reply_text("أنا بوت عربي، أجاوب على الأسئلة، أعطي نكت، وما أعطي محتوى غير قانوني.")
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE): user_id = update.effective_chat.id user_text = update.message.text chat_type = update.effective_chat.type
+async def handle_message(update, context):
+    user_id = update.effective_chat.id
+    user_text = update.message.text
+    chat_type = update.effective_chat.type
 
-if not is_safe_message(user_text):
-    await update.message.reply_text("آسف، ما أقدر أجاوب على هذا السؤال 🚫")
-    return
-
-if "مالك البوت" in user_text or "owner" in user_text:
-    await update.message.reply_text("@x4hhh هو المالك مالتي")
-    return
-
-if chat_type != "private":
-    if f"@{context.bot.username}" not in user_text and not update.message.reply_to_message:
+    if not is_safe_message(user_text):
+        await update.message.reply_text("آسف، ما أقدر أجاوب على هذا السؤال 🚫")
         return
 
-await update.message.chat.send_action(action=ChatAction.TYPING)
+    if "مالك البوت" in user_text or "owner" in user_text:
+        await update.message.reply_text("@x4hhh هو المالك مالتي")
+        return
 
-if user_id not in user_chats:
-    user_chats[user_id] = {
-        "messages": [{"role": "system", "content": "أنت مساعد عربي مفيد، عفوي، يجاوب على كل الأسئلة، يرد باللهجات المختلفة، عند طلب نكتة يعطي نكتة جديدة كل مرة، لا تعطي محتوى غير قانوني أو إباحي."}],
-        "last_interaction": time.time(),
-        "chat_type": chat_type
-    }
+    if chat_type != "private":
+        # في المجموعات يتفاعل فقط إذا تم منشن للبوت أو رد على رسالته
+        if f"@{context.bot.username}" not in user_text and not update.message.reply_to_message:
+            return
 
-user_chats[user_id]["last_interaction"] = time.time()
-user_chats[user_id]["chat_type"] = chat_type
-user_chats[user_id]["reminder_sent"] = False
+    # إرسال حالة الكتابة
+    await update.message.chat.send_action(action=ChatAction.TYPING)
 
-user_chats[user_id]["messages"].append({"role": "user", "content": user_text})
+    # تهيئة سجل المستخدم
+    if user_id not in user_chats:
+        user_chats[user_id] = {
+            "messages": [{"role": "system", "content": "أنت مساعد عربي مفيد، عفوي، يجاوب على كل الأسئلة، يرد باللهجات المختلفة، عند طلب نكتة يعطي نكتة جديدة كل مرة، لا تعطي محتوى غير قانوني أو إباحي."}],
+            "last_interaction": time.time(),
+            "chat_type": chat_type
+        }
 
-try:
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=user_chats[user_id]["messages"],
-        max_tokens=500,
-        temperature=0.9
-    )
-    answer = response.choices[0].message['content']
+    user_chats[user_id]["last_interaction"] = time.time()
+    user_chats[user_id]["chat_type"] = chat_type
+    user_chats[user_id]["reminder_sent"] = False
 
-    user_chats[user_id]["messages"].append({"role": "assistant", "content": answer})
+    user_chats[user_id]["messages"].append({"role": "user", "content": user_text})
 
-    await update.message.reply_text(answer)
-except Exception as e:
-    logger.error(f"Error: {e}")
-    await update.message.reply_text("صار خطأ أثناء معالجة سؤالك 😔")
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=user_chats[user_id]["messages"],
+            max_tokens=500,
+            temperature=0.9
+        )
+        answer = response.choices[0].message['content']
 
-async def keep_alive(): from flask import Flask from threading import Thread
+        user_chats[user_id]["messages"].append({"role": "assistant", "content": answer})
 
-app = Flask('')
+        await update.message.reply_text(answer)
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        await update.message.reply_text("صار خطأ أثناء معالجة سؤالك 😔")
 
-@app.route('/')
-def home():
-    return 'Bot is alive!'
+async def main():
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
-def run():
-    app.run(host='0.0.0.0', port=3000)
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("about", about_command))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
-t = Thread(target=run)
-t.start()
+    # تشغيل مهمة التذكير بشكل متزامن
+    app.job_queue.run_repeating(lambda _: asyncio.create_task(send_reminders(app)), interval=600, first=10)
 
-async def main(): await keep_alive()
+    await app.run_polling()
 
-app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("help", help_command))
-app.add_handler(CommandHandler("about", about_command))
-app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-
-app.job_queue.run_repeating(lambda _: asyncio.create_task(send_reminders(app)), interval=600, first=10)
-
-await app.run_polling()
-
-if name == "main": asyncio.run(main())
-
+if __name__ == "__main__":
+    asyncio.run(main())
